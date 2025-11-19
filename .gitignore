@@ -1,0 +1,12 @@
+#dataset
+Text Classification Dataset/
+
+#old files
+old/
+quiz.ipynb
+
+#model files
+*.pth
+
+#venv
+.venv/
