@@ -2,26 +2,6 @@ import torch
 import torch.nn as nn
 
 # ─────────────────────────────
-# 모델저장, 불러오기
-# ─────────────────────────────
-def save_model(name:str, model, optimizer, epoch, batch):
-    ckpt = {
-        "model": model.state_dict(),
-        "optimizer": optimizer.state_dict(),
-        "epoch": epoch,
-        "batch": batch
-    }
-    torch.save(ckpt, f"{name}.pth")
-def load_model(path:str, model, optimizer, device):
-    ckpt = torch.load(f"{path}.pth", map_location=device)
-    model.load_state_dict(ckpt["model"])          
-    optimizer.load_state_dict(ckpt["optimizer"]) 
-    epoch = ckpt.get("epoch", 0)
-    batch_num = ckpt.get("batch", 0)
-    return model, optimizer, epoch, batch_num
-
-
-# ─────────────────────────────
 # 훈련,평가용 유틸
 # ─────────────────────────────
 from torch.utils.data import DataLoader
@@ -39,7 +19,51 @@ def get_optimizer(model):
     )
     return optimizer
 
-def train_model(model, train_data, validation_data, optimizer, collator, criterion, batch=16, num_epochs=5, device = 'cuda'):
+import copy
+class Call_back:
+    def __call__(self, context:dict)->bool:
+        pass
+class Save_best_model(Call_back):
+    def __init__(self, save_dir=None):
+        super().__init__()
+        self.best_score = None
+        self.best_model_state = None
+        self.save_dir = save_dir
+    def __call__(self, context):
+        if self.best_score == None or context['val_loss'] < self.best_score:
+            print('saving best model...')
+            self.best_score = context['val_loss']
+            self.best_model_state = copy.deepcopy(context['model'].state_dict())
+            if self.save_dir != None:
+                torch.save(self.best_model_state, self.save_dir)
+            return True
+    def get_best_model_state(self):
+        return self.best_model_state
+class Early_stop(Call_back):
+    def __init__(self, max_cnt = 3):
+        super().__init__()
+        self.max_cnt = max_cnt
+        self.prev_loss = None
+        self.cur_cnt = None
+    def __call__(self, context):
+        if self.prev_loss == None:
+            self.prev_loss = context['val_loss']
+            self.cur_cnt = 0
+            return True
+        if context['val_loss'] >= self.prev_loss:
+            self.cur_cnt += 1
+            if self.cur_cnt >= self.max_cnt:
+                print('Early stopped...')
+                return False
+        else:
+            self.cur_cnt = 0
+            self.prev_loss = context['val_loss']
+            return True
+        
+
+
+
+def train_model(model, train_data, validation_data, optimizer, collator, criterion, batch=16, num_epochs=5, device = 'cuda', call_backs=[]):
     train_loader = DataLoader(
         train_data,       
         batch_size=batch,#16,32,128              
@@ -64,11 +88,16 @@ def train_model(model, train_data, validation_data, optimizer, collator, criteri
             cur_batch_size = ids.size(0)
             total += loss.item()*cur_batch_size
             n += cur_batch_size
+            train_loss = total / max(n,1)
 
         print(f'epoch {epoch+1} end')
-        print(f'train_loss: {total / max(n,1)}')
+        print(f'train_loss: {train_loss}')
         if validation_data != None:
-            print(f'val_loss: {evaluate(model, validation_data, criterion, collator, device)}')
+            val_loss = evaluate(model, validation_data, criterion, collator, device)
+            print(f'val_loss: {val_loss}')
+            for call_back in call_backs:
+                if not call_back({'model':model, 'train_loss':train_loss, 'val_loss':val_loss}):
+                    break
         print('============================================================')
 
 from torch import sigmoid
@@ -115,6 +144,15 @@ def get_accuracy(model, validation_data, thres, collator, device='cuda'):
     preds = [p >= thres for p in preds]
     rets = [p==l for p, l in zip(preds,label)]
     return sum(rets)/len(rets)
+from sklearn.metrics import accuracy_score, f1_score
+def get_metric(y_pred, y_true, thres, metric='accuracy'):
+    y_pred_label = [float(y >= thres) for y in y_pred]
+    if metric == 'accuracy':
+        return accuracy_score(y_true=y_true, y_pred=y_pred_label)
+    if metric == 'f1_score':
+        return f1_score(y_true=y_true, y_pred=y_pred_label)
+
+
 
 
 
