@@ -188,7 +188,7 @@ def zeroing_mask(x, mask):
     return x * m                      
 
 # ─────────────────────────────
-# 길이 축(L)에 대해 마스크 가중 전역 평균 풀링 (Conv 출력: N,C,L  →  N,C)
+# 길이 축(L)에 대해 마스크 가중 전역 평균 풀링 (Conv 출력: N,C,L -> N,C)
 # ─────────────────────────────
 def masked_global_avgpool(x, mask):
     # x: (N, C, L), mask: (N, L) in {0,1}
@@ -322,7 +322,7 @@ class SkipConnectBlock(nn.Module):
 # ─────────────────────────────
 # Conv1D+분류기
 # 입력: input_ids, attention_mask
-# 출력: 로짓
+# 출력: 로짓(모델의 출력에 시그모이드를 적용해 줘야 됩니다)
 # ─────────────────────────────
 class BertConv1dBinaryClassifier(nn.Module):
     def __init__(self, base_model_name, freeze_bert, after_conv, after_embbed, tokenizer=None):
@@ -356,6 +356,7 @@ class BertConv1dBinaryClassifier(nn.Module):
         logit = self.classifier(x_final).squeeze(-1)                        # (N,)
         return logit
 
+# 초기모델, 각 레이어에서 conv1d 하나만 씀
 class BertConv1dBinaryClassifier_Default(BertConv1dBinaryClassifier):
     def __init__(self, base_model_name, freeze_bert=True, 
                  couts=[256,128,64], filter_sizes=[5,5,3], dilations=[1,1,1], 
@@ -376,6 +377,7 @@ class BertConv1dBinaryClassifier_Default(BertConv1dBinaryClassifier):
             nn.Linear(couts[-1]*2, 1),  # 한 개 로그릿
         )
 
+# 최종모델, 각 레이어에서 conv1d를 3개씩 씀
 class BertConv1dBinaryClassifier_MultiK(BertConv1dBinaryClassifier):
     def __init__(self, base_model_name, freeze_bert=True, couts=[256,128,64], normalize_type='instance', after_conv = [zeroing_mask], after_embbed = [zeroing_mask, normalize_to_length1], tokenizer=None):
         super().__init__(base_model_name, freeze_bert, after_conv, after_embbed, tokenizer)

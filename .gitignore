@@ -6,7 +6,9 @@ old/
 quiz.ipynb
 
 #model files
-*.pth
+best.zip
 
 #venv
 .venv/
+
+__pycache__/
